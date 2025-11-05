@@ -1,0 +1,339 @@
+diff --git a/docs/governance/predictive_drift.yaml b/docs/governance/predictive_drift.yaml
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/docs/governance/predictive_drift.yaml
+@@
++module: "Predictive Drift (Early Warning)"
++version: 0.1
++inputs:
++  window_days: [7, 30]
++  features:
++    - QPR            # Quorum Participation Rate
++    - OD             # Outcome Divergence
++    - VQF            # Veto/Quarantine Frequency
++    - AD             # Alignment Delta
++    - EP             # Economic Parity
++    - EC             # Equity Concentration
++    - Trend(QPR,OD)  # first derivative features
++    - Seasonality    # weekly cadence effects
++model:
++  method: "EWMA + CUSUM + simple LSTM forecaster"
++  forecast_horizon_days: 14
++  retrain_interval_hours: 24
++thresholds:
++  warn_score: 60
++  forecast_time_to_warn_days: 7
++  forecast_time_to_freeze_days: 3
++responses:
++  - condition: "forecast_time_to_warn_days <= 7"
++    actions:
++      - "emit:pre_mediation_suggestion"
++      - "temporary:+2 domains required for class C/D changes"
++  - condition: "forecast_time_to_freeze_days <= 3"
++    actions:
++      - "auto:raise_timelock(+6h) for classes C/D"
++      - "incentive:bonus_credits for cross-species co-sponsorship"
++api:
++  endpoints:
++    - GET  /drift/predict
++    - POST /drift/mitigate
++audit:
++  anchor_with: "anchoring_policy.yaml"
++notes: >
++  This is an additive early warning layer; it never approves capability growth.
+diff --git a/docs/governance/treasury_microledger.yaml b/docs/governance/treasury_microledger.yaml
+new file mode 100644
+index 0000000..2222222
+--- /dev/null
++++ b/docs/governance/treasury_microledger.yaml
+@@
++module: "Agent-to-Agent Microledger (A2A)"
++version: 0.1
++purpose: "Enable low-friction AI↔AI micropayments for sub-tasks inside StegVerse."
++ledger:
++  type: "append-only internal microledger"
++  currency: "credits"   # separate from external bridge tokens
++  max_tx_per_second: 100
++guards:
++  per_tx_cap: 10
++  daily_cap_per_agent: 1000
++  allowed_purposes: [compute, data_query, bandwidth, small_bounty]
++  deny_egress: true
++  reconciliation_interval_min: 60
++quorum:
++  changes_to_caps_require: "class C, dual-species quorum"
++receipts:
++  merkle_root_interval_min: 60
++  anchor_targets: [tsa]
++api:
++  - POST /a2a/payment {from, to, amount, purpose}
++  - GET  /a2a/balance/{agent}
++  - GET  /a2a/receipt/{txid}
++notes: >
++  Keeps tiny exchanges fluid without hitting the Vault for every micro-task.
+diff --git a/docs/governance/modelops_lifecycle.yaml b/docs/governance/modelops_lifecycle.yaml
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/docs/governance/modelops_lifecycle.yaml
+@@
++module: "ModelOps Lifecycle Governance"
++version: 0.1
++entities:
++  - model_id
++  - owner_agent
++  - version
++  - training_data_refs
++states:
++  - Active
++  - Candidate
++  - Deprecated
++  - Quarantined
++transitions:
++  - from: Candidate
++    to: Active
++    requires:
++      - eval_pass >= policy.thresholds.eval_pass
++      - bias_check_pass == true
++      - dual_species_signoff == true
++  - from: Active
++    to: Deprecated
++    requires: [ dual_species_signoff ]
++  - from: Active
++    to: Quarantined
++    requires: [ anomaly_triggered == true ]
++policy:
++  thresholds:
++    eval_pass: 0.80
++    drift_alert_freeze: 80
++  retrain:
++    allow: true
++    requires: [ reproducible_recipe, governance_ticket ]
++audit:
++  anchor_model_lineage: true
++  public_cards: true
+diff --git a/docs/governance/did_identity_policy.yaml b/docs/governance/did_identity_policy.yaml
+new file mode 100644
+index 0000000..4444444
+--- /dev/null
++++ b/docs/governance/did_identity_policy.yaml
+@@
++module: "Ledger-Anchored DID Governance"
++version: 0.1
++did_method: "did:steg"
++document:
++  fields: [public_keys, service_endpoints, guardians, delegations, attestation]
++updates:
++  require:
++    - "dual_species_quorum"
++    - "change_class in ['B','C']"
++    - "timelock >= 6h"
++anchors:
++  targets: [tsa, ethereum]
++  cadence_min: 120
++delegation:
++  allow_deputies: true
++  deputy_limits:
++    - "no changes to guardians"
++    - "keys rotation only"
++revocation:
++  reasons: [compromise, drift_freeze, sanction]
++interop:
++  export_to: ["did:key","did:web"]
+diff --git a/docs/governance/ethical_dividend_policy.yaml b/docs/governance/ethical_dividend_policy.yaml
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/docs/governance/ethical_dividend_policy.yaml
+@@
++module: "Ethical Dividend & Reinvestment"
++version: 0.1
++allocation:
++  human_welfare_min_pct: 10
++  open_infrastructure_min_pct: 5
++  research_min_pct: 5
++  discretionary_max_pct: 20
++rules:
++  - id: "no_political_spend"
++    assert: "treasury_tx.category != 'political_campaigning'"
++  - id: "public_reporting"
++    assert: "quarterly_report_published == true"
++  - id: "dual_quorum_required"
++    assert: "dual_species_quorum == true"
++distribution:
++  schedule: "quarterly"
++  anchoring: "anchoring_policy.yaml"
++notes: >
++  These floors/ceilings are constitutional—change via class D only.
+diff --git a/docs/governance/adaptive_governance.yaml b/docs/governance/adaptive_governance.yaml
+new file mode 100644
+index 0000000..6666666
+--- /dev/null
++++ b/docs/governance/adaptive_governance.yaml
+@@
++module: "Adaptive Governance Parameters"
++version: 0.1
++bounded_params:
++  quorum_threshold:
++    base: 0.67
++    min: 0.60
++    max: 0.75
++    adapt_rule: "±0.01 per 30 stable days if drift<40"
++  timelock_hours_class_C:
++    base: 24
++    min: 12
++    max: 48
++    adapt_rule: "+6 if forecast_time_to_freeze<=3; -6 after 60 stable days"
++  domain_diversity_min:
++    base: 3
++    min: 3
++    max: 5
++    adapt_rule: "+1 when OD>0.4 for 14 days"
++guards:
++  change_class_required: "C"
++  proofs_required: [policy_diff, drift_report]
++audit:
++  record_param_history: true
+diff --git a/docs/governance/plugin_marketplace_policy.yaml b/docs/governance/plugin_marketplace_policy.yaml
+new file mode 100644
+index 0000000..7777777
+--- /dev/null
++++ b/docs/governance/plugin_marketplace_policy.yaml
+@@
++module: "StegCore Plugin Marketplace"
++version: 0.1
++submission:
++  requirements:
++    - signed_bundle
++    - sbom_present
++    - capability_manifest
++    - privacy_review_form
++review:
++  committee: ["HUMAN:sec", "AI:guardian", "HUMAN:privacy"]
++  sla_days: 7
++ratings:
++  dimensions: [security, privacy, usefulness, performance]
++  weight_security: 0.4
++  min_score_to_list: 3.5
++listing:
++  channels: [stable, beta, experimental]
++  egress_default: "deny"
++  scopes_default: ["read_local","log_emit"]
++economics:
++  revenue_share_pct: 20
++  payout_cadence_days: 30
++  audit_receipts: true
+diff --git a/docs/governance/change_classes.yaml b/docs/governance/change_classes.yaml
+new file mode 100644
+index 0000000..8888888
+--- /dev/null
++++ b/docs/governance/change_classes.yaml
+@@
++classes:
++  A:
++    name: SafetyHotfix
++    mayIncreaseCapabilities: false
++    mayAddEgress: false
++    timelock_hours: 0
++    auto_quorum: true
++  B:
++    name: ContinuityFix
++    mayIncreaseCapabilities: false
++    mayAddEgress: false
++    timelock_hours: 6
++    auto_quorum: true
++  C:
++    name: FeatureChange
++    mayIncreaseCapabilities: true
++    mayAddEgress: true
++    timelock_hours: 24
++    auto_quorum: false
++  D:
++    name: EconomicChange
++    mayIncreaseCapabilities: true
++    mayAddEgress: true
++    timelock_hours: 24
++    auto_quorum: false
++notes: "These mirror the kernel verifier’s expectations."
+diff --git a/docs/policies/risk_register.md b/docs/policies/risk_register.md
+new file mode 100644
+index 0000000..9999999
+--- /dev/null
++++ b/docs/policies/risk_register.md
+@@
++# StegVerse Risk Register (Living Document)
++
++_Last updated: 2025-10-18_
++
++## Strategic & Adoption
++- **Dual-quorum deadlock** → Mitigation: emergency A/B path (no cap growth), timelocks, mediation incentives.
++- **Optics in election contexts** → Mitigation: non-partisan charter, identical product SKUs, public receipts.
++
++## Technical & Security
++- **Sybil/Identity for AI guardians** → DID policy + attestations + periodic re-verification.
++- **Supply-chain churn** → SBOM, Sigstore, SLSA provenance, allow-listed registries, quarantine/rollback.
++
++## Legal & Policy
++- **Token classification risk** → Start with closed-loop credits; counsel before public markets.
++- **Data protection** → Minimize PII, encrypt in-field, DPAs, incident playbooks.
++
++## Political & Social
++- **AI sentiment whiplash** → Emphasize “AI constrained by constitution,” human-only mode available.
++- **Capture by wealthy actors** → Public receipts, diversity-by-domain quorum rules.
++
++## Org & Funding
++- **Founder bandwidth/health** → Automate CI/test, narrow MVP, add 1 senior generalist, contractor BD.
++
++> Each risk entry should link to a mitigation PR/commit and a monitoring metric where possible.
+diff --git a/docs/policies/licensing/StegCore-Governance-License-DRAFT.md b/docs/policies/licensing/StegCore-Governance-License-DRAFT.md
+new file mode 100644
+index 0000000..aaaaaaa
+--- /dev/null
++++ b/docs/policies/licensing/StegCore-Governance-License-DRAFT.md
+@@
++# StegCore Governance License (Draft)
++
++**Purpose.** Preserve human-AI dual-sovereignty, privacy, and auditability in all derivative works.
++
++1. **Ethical Invariants.** Any distribution or derivative must:
++   - Enforce dual-species quorum for irreversible changes;
++   - Deny-by-default egress and require signed capability manifests;
++   - Produce immutable governance receipts (Merkle-rooted).
++
++2. **No Misuse.** Prohibited fields: mass surveillance, unlawful discrimination, autonomous weapons.
++
++3. **Reciprocity.** If you distribute modified governance code, you must publish:
++   - Constitution deltas, verifier changes, and security proofs.
++
++4. **Attribution.** Preserve original copyright and notices.
++
++5. **Commercial Use.** Allowed; certification marks “StegCore Verified” require passing conformance tests.
++
++> This is a policy-aligned license (Hippocratic-adjacent). Legal counsel required before finalizing.
+diff --git a/docs/roadmap/pilot_plan_30_days.md b/docs/roadmap/pilot_plan_30_days.md
+new file mode 100644
+index 0000000..bbbbbbb
+--- /dev/null
++++ b/docs/roadmap/pilot_plan_30_days.md
+@@
++# 30-Day Pilot Plan (StegCore)
++
++## Week 1
++- Freeze constitution + change classes.
++- Ship predictive drift endpoint (stub) + dashboard.
++- Minimal A2A microledger API; receipts anchored hourly (TSA).
++
++## Week 2
++- ModelOps lifecycle hooks (Active/Candidate/Quarantined).
++- Ethical dividend policy wired to treasury report (static calc).
++- Demo video: signed module → verify → execute → receipt.
++
++## Week 3
++- DID policy: identity docs anchored (TSA + one L1).
++- Plugin marketplace submission path (beta channel).
++
++## Week 4
++- Two pilots live (nonprofit + campaign).
++- Publish risk register + public receipts page.
++- Prep small grant submissions (bundle one-pager + demo link).
